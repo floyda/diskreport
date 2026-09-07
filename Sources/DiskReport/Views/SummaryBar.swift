@@ -49,6 +49,8 @@ struct SummaryBar: View {
         VStack(alignment: .trailing) {
             if model.isScanning {
                 HStack { ProgressView().controlSize(.small); Text("Scanning…") }
+            } else if model.isLoading {
+                HStack { ProgressView().controlSize(.small); Text("Loading…") }
             } else if let current = model.reports.compactMap(\.current).first, let f = current.finishedAt {
                 Text("Scanned \(DateFormatting.relative(mtime: f, now: now)), \(Int(f - current.startedAt))s")
                     .font(.caption).foregroundStyle(.secondary)

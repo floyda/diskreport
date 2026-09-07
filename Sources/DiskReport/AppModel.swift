@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     private let evaluator = NotableEvaluator(rules: [])
     private var watcher: DatabaseWatcher?
     private var runner: ScanRunner?
+    private var loadGeneration = 0
 
     var summary: ReportSummary { ReportSummary.from(reports) }
     var hasNotices: Bool { !evaluator.notices(for: summary).isEmpty }
@@ -37,7 +38,7 @@ final class AppModel: ObservableObject {
     func start() {
         reload()
         let watcher = DatabaseWatcher(directory: paths.dataDir, fileName: paths.databaseURL.lastPathComponent) { [weak self] in
-            self?.reload()
+            Task { @MainActor in self?.reload() }
         }
         watcher.start()
         self.watcher = watcher
@@ -46,6 +47,8 @@ final class AppModel: ObservableObject {
     func reload() {
         let dbURL = paths.databaseURL
         isLoading = true
+        loadGeneration += 1
+        let generation = loadGeneration
         Task {
             let loaded: [RootReport] = await Task.detached(priority: .userInitiated) {
                 guard FileManager.default.fileExists(atPath: dbURL.path) else { return [] }
@@ -57,6 +60,7 @@ final class AppModel: ObservableObject {
                     return []
                 }
             }.value
+            guard generation == self.loadGeneration else { return }
             self.reports = loaded
             self.viewModel.load(reports: loaded, now: Int64(Date().timeIntervalSince1970))
             self.lastLoaded = Date()

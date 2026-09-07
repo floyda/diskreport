@@ -71,12 +71,14 @@ struct ReportTable: View {
     }
 
     private func copyPaths(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(ids.sorted().joined(separator: "\n"), forType: .string)
     }
 
     private func openInTerminal(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
         let terminal = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
         let urls = ids.map { URL(fileURLWithPath: $0, isDirectory: true) }
         NSWorkspace.shared.open(urls, withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())

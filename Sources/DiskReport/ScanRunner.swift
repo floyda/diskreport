@@ -3,7 +3,7 @@ import Foundation
 
 /// Runs the installed scanner binary under the same sandbox profile launchd uses. Never scans in-process.
 final class ScanRunner {
-    enum RunError: LocalizedError {
+    enum RunError: LocalizedError, Sendable {
         case notInstalled(String)
         case exited(Int32, String)
 
@@ -19,7 +19,7 @@ final class ScanRunner {
 
     init(paths: DataPaths) { self.paths = paths }
 
-    func run(completion: @escaping (Result<Void, RunError>) -> Void) {
+    func run(completion: @escaping @Sendable (Result<Void, RunError>) -> Void) {
         let scanner = paths.binDir.appendingPathComponent("diskreport-scan")
         let profile = paths.binDir.appendingPathComponent("scan.sb")
         for required in [scanner, profile] where !FileManager.default.fileExists(atPath: required.path) {
@@ -38,7 +38,7 @@ final class ScanRunner {
         ]
         let stderr = Pipe()
         process.standardError = stderr
-        process.standardOutput = Pipe()
+        process.standardOutput = FileHandle.nullDevice
         process.terminationHandler = { p in
             let text = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
