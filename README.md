@@ -135,3 +135,7 @@ something needs attention; v1 ships none).
 - Menu bar badge and optional notification when free space drops below a threshold or a folder grows
   more than a set amount in a day.
 - Add-root UI, size trend sparklines from the retained snapshots.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
