@@ -50,7 +50,8 @@ public struct Config: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         roots = try c.decode([String].self, forKey: .roots)
         retention = try c.decodeIfPresent(Retention.self, forKey: .retention) ?? Retention()
-        minRecordedBytes = try c.decodeIfPresent(Int64.self, forKey: .minRecordedBytes) ?? Config.defaultMinRecordedBytes
+        let decodedMinRecordedBytes = try c.decodeIfPresent(Int64.self, forKey: .minRecordedBytes) ?? Config.defaultMinRecordedBytes
+        minRecordedBytes = max(0, decodedMinRecordedBytes)
     }
 
     public static func parse(_ data: Data) throws -> Config {

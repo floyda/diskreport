@@ -25,6 +25,11 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(big.minRecordedBytes, 10_485_760)
     }
 
+    func testNegativeMinRecordedBytesClampsToZero() throws {
+        let cfg = try Config.parse(Data(#"{"roots":["/a"],"minRecordedBytes":-5}"#.utf8))
+        XCTAssertEqual(cfg.minRecordedBytes, 0)
+    }
+
     func testResolvedRootsExpandsTildeAndStripsTrailingSlash() throws {
         let cfg = Config(roots: ["~/Some/Dir/"], retention: Retention())
         let home = FileManager.default.homeDirectoryForCurrentUser.path

@@ -80,12 +80,14 @@ final class AppModel: ObservableObject {
             self.reports = loaded.0
             self.viewModel.load(roots: loaded.1, now: Int64(Date().timeIntervalSince1970))
             self.lastLoaded = Date()
-            self.isLoading = false
         }
     }
 
     /// Releases the in-flight slot and runs one more load if a request came in while this one ran.
+    /// Also clears `isLoading` on every path out of `reload()`, including the generation-guard
+    /// early return, so a superseded load can never leave the spinner stuck.
     private func finishLoad() {
+        isLoading = false
         loadInFlight = false
         guard loadPending else { return }
         loadPending = false
