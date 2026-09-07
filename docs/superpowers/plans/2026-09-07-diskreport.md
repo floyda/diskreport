@@ -19,7 +19,7 @@ Spec: `docs/superpowers/specs/2026-09-07-diskreport-design.md`. Read it first.
 - The app target contains no filesystem walk code and never opens files under a root.
 - Data folder: `~/Library/Application Support/DiskReport/` (database `diskreport.sqlite`, `config.json`, `scan.lock`, `bin/`). Logs: `~/Library/Logs/DiskReport/`, keep 14 files.
 - Sizes are **allocated** bytes (`st_blocks * 512`). Hard links counted once. Symlinks never followed. Never descend into a different `st_dev`.
-- Baselines: latest `completed` scan with `finished_at <= current.finished_at - W*86400` for W ∈ {1, 7, 30}; otherwise "no data". `deleted` uses the 1-day baseline only.
+- Baselines: latest `completed` scan with `finished_at <= current.finished_at - W*86400 + Window.slack` (slack = 6 h) for W ∈ {1, 7, 30}; otherwise "no data". The slack keeps a scan that ran longer than the previous one from losing its baseline, and is far short of the 24 h between runs. `deleted` uses the 1-day baseline only.
 - Staleness buckets: `< 7d` week, `< 30d` month, `< 183d` sixMonths, else older.
 - Retention: keep all scans ≤ 45 days; one per ISO week ≤ 52 weeks; one per calendar month beyond. Failed scans older than 45 days deleted.
 - Exit codes for `diskreport-scan`: 0 ok, 1 config error, 2 lock held, 3 refused (running as root), 4 at least one root failed, 10 self-test write succeeded (sandbox NOT enforcing).

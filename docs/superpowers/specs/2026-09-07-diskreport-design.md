@@ -176,7 +176,9 @@ Consequences of the threshold, both accepted:
 
 ### Comparisons
 
-For a given root, the *baseline* for window `W` (1, 7, or 30 days) is the most recent `completed` scan whose `finished_at` is ≤ `current.finished_at − W days`. If none exists, the column reports "no data" rather than falling back to the oldest scan, so a fresh install never claims growth it did not observe.
+For a given root, the *baseline* for window `W` (1, 7, or 30 days) is the most recent `completed` scan whose `finished_at` is ≤ `current.finished_at − W days + slack`, where slack is 6 hours. If none exists, the column reports "no data" rather than falling back to the oldest scan, so a fresh install never claims growth it did not observe.
+
+The slack exists because scans start at a fixed 07:00 but take a variable amount of time. Without it, yesterday's scan only qualifies as today's day-baseline if it finished at least as fast as today's, so a scan that runs a few minutes longer than the previous one silently reports "no data" for Δ Day. Six hours absorbs that variance while staying far short of the 24-hour spacing between scheduled runs, so it can never pull in a scan from the same day.
 
 Per directory: `delta = current.bytes − baseline.bytes`. A path present in current but not in a baseline is `new` for that window (delta shown as its full size). `deleted` uses the 1-day baseline only: a path present there but not in current is shown from the baseline row, greyed, with its size as a negative Δ Day; week and month columns for such rows show "—".
 
