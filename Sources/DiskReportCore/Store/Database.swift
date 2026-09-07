@@ -28,13 +28,15 @@ final class Database {
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         guard sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK else {
             let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
-            sqlite3_close(db)
+            sqlite3_close_v2(db)
             throw DatabaseError.open(message)
         }
         handle = db
     }
 
-    deinit { sqlite3_close(handle) }
+    // close_v2 rather than close: it defers the actual close until the last statement finalizes instead of
+    // returning SQLITE_BUSY and leaking the handle if one outlives the Database (Statement holds `unowned`).
+    deinit { sqlite3_close_v2(handle) }
 
     var errorMessage: String { String(cString: sqlite3_errmsg(handle)) }
     var lastInsertRowID: Int64 { sqlite3_last_insert_rowid(handle) }

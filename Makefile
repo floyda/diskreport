@@ -1,5 +1,11 @@
 .PHONY: build test lint release bundle install uninstall scan-now status clean
 
+# Every path below is derived from HOME; with it unset they would collapse to /Library/... and the
+# install target would try to write outside the user's home.
+ifeq ($(strip $(HOME)),)
+$(error HOME is not set)
+endif
+
 DATA_DIR := $(HOME)/Library/Application Support/DiskReport
 LOG_DIR  := $(HOME)/Library/Logs/DiskReport
 AGENT    := com.andyfloyd.diskreport.scan

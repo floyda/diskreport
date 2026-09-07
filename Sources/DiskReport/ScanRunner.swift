@@ -1,6 +1,26 @@
 import DiskReportCore
 import Foundation
 
+/// Accumulates a child process's stderr. The readability handler runs on an arbitrary queue and the
+/// termination handler on another, so the buffer is behind a lock.
+private final class StderrBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = Data()
+
+    func append(_ chunk: Data) {
+        guard !chunk.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        buffer.append(chunk)
+    }
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return buffer
+    }
+}
+
 /// Runs the installed scanner binary under the same sandbox profile launchd uses. Never scans in-process.
 final class ScanRunner {
     enum RunError: LocalizedError, Sendable {
@@ -39,9 +59,24 @@ final class ScanRunner {
         let stderr = Pipe()
         process.standardError = stderr
         process.standardOutput = FileHandle.nullDevice
+
+        // Drain stderr as it arrives. Reading only in the termination handler would deadlock a scanner
+        // that logs more than the pipe buffer (64 KB): it blocks writing, so it never terminates, so we
+        // never read. One skipped-entry line per unreadable directory reaches that easily.
+        let collected = StderrBuffer()
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                collected.append(chunk)
+            }
+        }
         process.terminationHandler = { p in
-            let text = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let handle = stderr.fileHandleForReading
+            handle.readabilityHandler = nil
+            collected.append(handle.readDataToEndOfFile())
+            let text = String(decoding: collected.data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             if p.terminationStatus == 0 { completion(.success(())) } else { completion(.failure(.exited(p.terminationStatus, text))) }
         }
         do {

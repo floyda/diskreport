@@ -212,12 +212,16 @@ public protocol NotableRule { func evaluate(_ report: ReportSummary) -> Notice? 
 
 Four independent layers; any one failing is caught by another.
 
-1. **OS sandbox.** launchd and the app's "Scan Now" both run the scanner as `sandbox-exec -f scan.sb diskreport-scan`. The profile:
-   - `(allow file-read*)` everywhere;
-   - `(allow file-write*)` only under `~/Library/Application Support/DiskReport/`, `~/Library/Logs/DiskReport/`, and the process temp dir;
-   - `(deny network*)`;
-   - default deny for everything else.
-   Any write attempt to a scanned root is refused by the kernel. `sandbox-exec` is deprecated by Apple but ships and works on macOS 26; if it is ever removed, the migration path is an App Sandbox entitlement on a signed scanner bundle with `com.apple.security.files.user-selected.read-only` scoped to the roots.
+1. **OS sandbox.** launchd and the app's "Scan Now" both run the scanner as `sandbox-exec -f scan.sb diskreport-scan`. The profile, in order:
+   - `(allow default)`;
+   - `(deny network*)` and `(deny file-write*)` — reads stay allowed everywhere, every write is refused;
+   - `(allow file-write* (subpath (param "DATA_DIR")))` and the same for `LOG_DIR`, both passed in with `-D`;
+   - `(allow file-write-data (literal "/dev/null"))`.
+
+   Starting from `allow default` and denying only the two dangerous classes keeps the profile short enough
+   to read in one go, and leaves the two DiskReport folders as the only writable paths. No temp-directory
+   write is permitted, and none is needed: the store sets `PRAGMA temp_store=MEMORY`, so SQLite never
+   spills to `/var/folders`. Any write attempt to a scanned root is refused by the kernel. `sandbox-exec` is deprecated by Apple but ships and works on macOS 26; if it is ever removed, the migration path is an App Sandbox entitlement on a signed scanner bundle with `com.apple.security.files.user-selected.read-only` scoped to the roots.
 2. **Code discipline.** `DiskReportCore` and `diskreport-scan` use only `opendir`/`readdir`/`fstatat`/`open(O_RDONLY)` against scanned paths. A build-phase lint (`Scripts/lint-readonly.sh`) greps **every** target — the two scanner ones and both app ones, since layer 3 below is only true as long as the app stays write-free — for write-capable calls (`unlink`, `rmdir`, `rename`, `truncate`, `utimes`, `chmod`, `chown`, the `*at` variants `unlinkat`/`renameat`/`mkdirat`/`openat`/`fchmodat`/`utimensat`/`linkat`/`symlinkat`, `setxattr`, `removexattr`, `O_WRONLY`, `O_RDWR`, `O_CREAT`, `FileManager.removeItem`, `moveItem`, `copyItem`, `linkItem`, `createSymbolicLink`, `trashItem`, `replaceItem`, `createFile`, `write(to:`) outside the `Store/` directory, and fails the build on a hit. `Store/` (database, lock file) and `Logging/` (log files) are the only modules allowed to write, and both are constrained to the DiskReport data and log folders.
 3. **Process separation.** The app has no walk code and never opens files under a root. Its only root-related call is `NSWorkspace.shared.activateFileViewerSelecting([url])`, which cannot modify the filesystem.
 4. **Verification test.** An integration test builds a fixture tree, records a manifest (`path, size, mtime, ctime, inode, mode`, plus atime where the fixture volume preserves it), runs the real scanner binary under the sandbox profile, and asserts the manifest is unchanged.

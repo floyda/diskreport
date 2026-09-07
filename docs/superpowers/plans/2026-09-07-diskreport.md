@@ -4685,3 +4685,22 @@ git commit -m "feat: install/uninstall/schedule targets and README"
 - Spec §8 `open` runs regardless of scan exit status: `run-scan.sh` (Task 9).
 - Spec §8 "no completed scan yet" banner: `BannerState` (Task 11).
 - Deviations recorded: view models live in `DiskReportUI` (testability); the whole tree for the latest scan is loaded in one query off the main actor instead of per-node lazy loading, since 100k rows load in well under a second and the window opens immediately with a loading state.
+
+### Deviations from the spec found by the whole-branch review
+
+- **Recorded-size threshold (spec §5).** The plan assumed one `dir_stats` row per directory. The first real
+  scan of `~/Workspace` recorded 511,116 rows / 284 MB in 525 s, which the retention policy would grow to
+  ~26 GB on a volume with 59 GB free — the tool would have become a meaningful consumer of the space it
+  diagnoses. `Config.minRecordedBytes` (default 1 MB) now bounds it: smaller directories are walked and
+  rolled up into their ancestors but not stored, cutting a snapshot to ~18,700 rows. `Store.trimDirStats`
+  plus a `VACUUM` apply the threshold to existing snapshots, and the summary line gained `walked=`.
+  Accepted consequence: a directory crossing the threshold between scans reads as "new" for that window.
+- **Baseline slack (spec §5).** `baselineCutoff` was `finished_at - W*86400` exactly. Since scans start at a
+  fixed 07:00 and take a variable time, yesterday's scan qualified as today's day baseline only if it ran at
+  least as fast as today's — a scan minutes slower than the last would blank the whole Δ Day column.
+  `Window.slack` (6 h) is added to every cutoff: enough for the variance, far short of the 24 h between runs.
+- **Off-main tree build (spec §7).** The query was moved off the main actor but `TreeBuilder.build` still ran
+  on it inside `ReportViewModel.load(reports:now:)`. `load(roots:now:)` now takes a prebuilt tree and
+  `AppModel` builds it in the same detached task as the query, handing the roots over (`DirNode` is
+  `@unchecked Sendable` for that transfer). Reloads are also serialised, since the WAL watcher fires several
+  times per scan and each event used to start another full load.
