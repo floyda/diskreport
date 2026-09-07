@@ -3893,6 +3893,8 @@ Expected: empty. If not, fix and commit with `chore: checkpoint before app targe
 
 There are no automated tests for this task (spec: no UI automation in v1). Verification is manual, steps 9–10.
 
+Decisions recorded after review: the scanner's stdout goes to `FileHandle.nullDevice` (an unread pipe could hang the scan); `DatabaseWatcher` re-arms the sqlite/-wal file watches on every debounced change and on rename/delete, so a fresh install picks up the first database; `AppModel.reload()` uses a generation counter so overlapping loads cannot land out of order; the summary bar shows a "Loading…" state while `isLoading`.
+
 - [ ] **Step 1: AppModel**
 
 `Sources/DiskReport/AppModel.swift`:
