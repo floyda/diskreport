@@ -166,12 +166,19 @@ they simply do not get a row. The measured distribution for `~/Workspace`:
 
 At the default this is roughly 10 MB per snapshot and a few GB across the full retention window.
 
-Consequences of the threshold, both accepted:
+Consequences of the threshold, all accepted:
 
-- A directory that crosses `minRecordedBytes` between two scans has no row in the older snapshot, so it is
-  reported as **new** for that window with its full size as the delta — which is the useful reading anyway.
+- A directory that crosses `minRecordedBytes` upward between two scans has no row in the older snapshot, so
+  it is reported as **new** for that window with its full size as the delta — which is the useful reading
+  anyway.
+- A directory that shrinks from above the threshold to below it between two scans has a baseline row but no
+  current row, so the report shows it greyed as **deleted**, with Δ Day equal to minus its old size, even
+  though the directory still exists. The misclassification is bounded by the threshold: the reported delta
+  can be off by at most `minRecordedBytes`.
 - Lowering the threshold only affects future scans; raising it is applied to existing snapshots on the next
-  run (see retention below), which shrinks the database.
+  run (see retention below), which shrinks the database. Because trimmed rows are never re-added to old
+  snapshots, lowering `minRecordedBytes` produces a one-time flood of **new** rows in every comparison
+  window, one scan after the change.
 
 
 ### Comparisons

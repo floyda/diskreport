@@ -43,8 +43,18 @@ the default. Tuning:
 - Each scan logs `dirs=` (rows recorded) and `walked=` (directories visited) in its summary line, plus the
   trimmed row count and resulting database size when it shrinks anything.
 
-One side effect worth knowing: a directory that grows past the threshold between two scans has no row in the
-older snapshot, so the report shows it as **new** for that window with its full size as the delta.
+Side effects worth knowing:
+
+- A directory that grows past the threshold between two scans has no row in the older snapshot, so the
+  report shows it as **new** for that window with its full size as the delta.
+- A directory that shrinks from above the threshold to below it between two scans has a baseline row but no
+  current row, so the report shows it greyed as **deleted**, with Δ Day equal to minus its old size, even
+  though the directory still exists. The misclassification is bounded by the threshold.
+- Lowering `minRecordedBytes` produces a one-time flood of **new** rows in every comparison window, one scan
+  after the change, because trimmed rows are never re-added to old snapshots.
+- `VACUUM` builds its transient copy in memory (`temp_store=MEMORY`, so the sandbox needs no temp-file
+  write), which at very low thresholds on large roots can mean a few hundred MB of scanner RSS during the
+  vacuum.
 
 ## Use
 
