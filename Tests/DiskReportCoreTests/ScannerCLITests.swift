@@ -129,6 +129,30 @@ final class ScannerCLITests: XCTestCase {
         XCTAssertTrue(r.stderr.contains("usage:"), r.stderr)
     }
 
+    func testRootFailureExits4AndContinuesOtherRoots() throws {
+        let tmp = makeTempDir()
+        tmp.file("rootA/x.bin")
+        let rootA = realpathString(tmp.path("rootA"))
+
+        let target = tmp.mkdir("target")
+        let rootBPath = tmp.path("rootB")
+        try FileManager.default.createSymbolicLink(atPath: rootBPath, withDestinationPath: target)
+
+        let args = try CLI.standardArgs(tmp: tmp, roots: [rootA, rootBPath])
+        let r = try CLI.run(args)
+
+        XCTAssertEqual(r.status, 4, r.stderr)
+        XCTAssertTrue(r.stdout.contains("root=\(rootA) status=completed"), r.stdout)
+        XCTAssertTrue(r.stdout.contains("root=\(rootBPath) status=failed error="), r.stdout)
+        XCTAssertTrue(r.stdout.contains("done status=failed"), r.stdout)
+
+        let store = try Store(url: URL(fileURLWithPath: tmp.path("data/diskreport.sqlite")))
+        let scanA = try XCTUnwrap(try store.latestCompletedScan(rootID: try store.rootID(for: rootA)))
+        XCTAssertEqual(scanA.status, .completed)
+        let scanB = try XCTUnwrap(try store.latestScan(rootID: try store.rootID(for: rootBPath)))
+        XCTAssertEqual(scanB.status, .failed)
+    }
+
     func testRunningScanFromPreviousCrashIsMarkedFailed() throws {
         let tmp = makeTempDir()
         tmp.mkdir("root")

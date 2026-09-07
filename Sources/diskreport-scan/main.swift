@@ -72,9 +72,11 @@ for root in roots {
     let started = now()
     let startDate = Date()
     var scanID: Int64 = -1
+    var rootID: Int64?
     do {
-        let rootID = try store.rootID(for: root)
-        scanID = try store.beginScan(rootID: rootID, startedAt: started)
+        let rid = try store.rootID(for: root)
+        rootID = rid
+        scanID = try store.beginScan(rootID: rid, startedAt: started)
         logger.log("scan \(scanID) start root=\(root)")
 
         let result = try Walker().walk(root: root)
@@ -90,18 +92,30 @@ for root in roots {
         let line = "root=\(root) status=completed total=\(summary.totalBytes) files=\(summary.fileCount) dirs=\(summary.dirCount) skipped=\(summary.skippedCount) duration=\(duration)s"
         logger.log(line)
         print("diskreport-scan: \(line)")
-
-        let toDelete = RetentionPolicy.scansToDelete(try store.scans(rootID: rootID), now: now(), retention: config.retention)
-        if !toDelete.isEmpty {
-            try store.deleteScans(ids: toDelete)
-            logger.log("pruned \(toDelete.count) old scan(s) for root=\(root)")
-        }
     } catch {
         anyFailed = true
         let message = "\(error)"
         logger.log("scan \(scanID) FAILED root=\(root): \(message)")
-        if scanID >= 0 { try? store.failScan(id: scanID, finishedAt: now(), error: message) }
+        if scanID >= 0 {
+            do {
+                try store.failScan(id: scanID, finishedAt: now(), error: message)
+            } catch {
+                logger.log("warning: could not mark scan \(scanID) failed: \(error)")
+            }
+        }
         print("diskreport-scan: root=\(root) status=failed error=\(message)")
+    }
+
+    if let rid = rootID {
+        do {
+            let toDelete = RetentionPolicy.scansToDelete(try store.scans(rootID: rid), now: now(), retention: config.retention)
+            if !toDelete.isEmpty {
+                try store.deleteScans(ids: toDelete)
+                logger.log("pruned \(toDelete.count) old scan(s) for root=\(root)")
+            }
+        } catch {
+            logger.log("warning: pruning failed for root=\(root): \(error)")
+        }
     }
 }
 

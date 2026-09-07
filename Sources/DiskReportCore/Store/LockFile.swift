@@ -14,8 +14,12 @@ public final class LockFile {
         let fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)
         guard fd >= 0 else { throw Error.cannotOpen(String(cString: strerror(errno))) }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            let lockErrno = errno
             close(fd)
-            throw Error.alreadyHeld
+            if lockErrno == EWOULDBLOCK {
+                throw Error.alreadyHeld
+            }
+            throw Error.cannotOpen(String(cString: strerror(lockErrno)))
         }
         self.fd = fd
     }
