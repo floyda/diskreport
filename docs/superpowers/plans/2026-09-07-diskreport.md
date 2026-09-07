@@ -3569,11 +3569,11 @@ git commit -m "feat(ui): tree builder, quick filters, report view model with exp
 **Interfaces:**
 - Consumes: `Delta`, `RootReport`, `VisibleRow`, `SortKey`.
 - Produces:
-  - `public enum ByteFormatter { static func string(_ bytes: Int64) -> String }` base-1000, e.g. `0 B`, `999 B`, `1.0 KB`, `12.3 MB`, `345 MB`, `1.2 GB`, `-1.2 GB`
+  - `public enum ByteFormatter { static func string(_ bytes: Int64) -> String }` base-1000, e.g. `0 B`, `999 B`, `1.0 KB`, `12.3 MB`, `345 MB`, `1.2 GB`, `-1.2 GB`. Unit promotion and the one-decimal rule are decided on the rounded value (promote at >= 999.95, one decimal below 99.95) so 999_950 B is `1.0 MB` and 99_950 B is `100 KB`.
   - `public enum DeltaFormatter { static func string(_ delta: Delta) -> String }`: `—` for noData, `+1.2 GB (new)`, `+340 MB`, `-12 MB`, `0 B` for unchanged
   - `public enum DateFormatting { static func relative(mtime: Int64, now: Int64) -> String; static func absolute(_ t: Int64) -> String }`
   - `public enum RevealTarget { static func url(forFolder path: String) -> URL }`
-  - `public enum BannerState { static func message(reports: [RootReport], now: Int64, staleAfter: Int64 = 172_800) -> String? }`
+  - `public enum BannerState { static func message(reports: [RootReport], now: Int64, staleAfter: Int64 = 172_800) -> String? }`. Severity is evaluated across all roots: any failed root first, then any root without a completed scan, then any stale root.
   - `public extension SortKey { init?(keyPath: PartialKeyPath<VisibleRow>) }`
 
 - [ ] **Step 1: Write failing tests**
