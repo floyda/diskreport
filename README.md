@@ -5,7 +5,48 @@ last-modified time of every directory under your configured roots each morning; 
 what grew since yesterday / last week / last month and what is stale, and reveals folders in Finder so
 you can act on them yourself.
 
-DiskReport never modifies anything under a scanned root. See `docs/superpowers/specs/` for the guardrails.
+DiskReport never modifies anything under a scanned root. That promise is enforced at four independent
+layers rather than assumed:
+
+1. **OS sandbox.** The scanner runs under `sandbox-exec` with a profile that denies every write outside
+   `~/Library/Application Support/DiskReport` and `~/Library/Logs/DiskReport`, and denies network.
+2. **Code discipline.** The walker uses only `opendir`/`readdir`/`fstatat` with no-follow flags. A lint
+   step (`Scripts/lint-readonly.sh`) fails the build if any write-capable call appears outside the two
+   modules allowed to write to DiskReport's own folders.
+3. **Process separation.** The menu bar app has no filesystem walk code at all; it reads the database and
+   asks Finder to reveal paths.
+4. **Verification test.** The test suite records a full metadata manifest of a fixture tree, runs the real
+   scanner binary under the real sandbox profile, and asserts nothing changed.
+
+The full design lives in [`docs/superpowers/specs/2026-09-07-diskreport-design.md`](docs/superpowers/specs/2026-09-07-diskreport-design.md).
+
+## Requirements
+
+- macOS 14 or later (built and tested on macOS 26 with Xcode 26). Apple silicon or Intel.
+- Xcode command line tools with Swift 5.10+ (`swift --version`).
+- No third-party dependencies; SQLite comes from the system.
+- No admin rights: everything installs under your home directory.
+
+## How it works
+
+```
+launchd (07:00 daily)
+  └─ run-scan.sh
+       ├─ sandbox-exec -f scan.sb diskreport-scan   # walks roots, writes one snapshot to SQLite
+       └─ open -a DiskReport --show-report          # brings the menu bar app's window forward
+
+DiskReport.app (menu bar)
+  ├─ reads ~/Library/Application Support/DiskReport/diskreport.sqlite
+  ├─ compares the latest snapshot with the ones from 1, 7 and 30 days ago
+  └─ Reveal in Finder selects the folder in its parent, so ⌘⌫ acts on it directly
+```
+
+The scanner walks every directory under each root once, recording allocated size (what the disk actually
+loses, so APFS clones and sparse files are counted correctly), file count and the newest modification time
+anywhere beneath it. Symlinks are never followed, hard links are counted once, and other volumes are never
+entered. Snapshots are compared against the most recent completed scan at least 1, 7 and 30 days old; where
+no such scan exists yet the column shows "—" rather than guessing. Old snapshots are thinned to one per week
+after 45 days and one per month after a year.
 
 ## Install
 
@@ -72,3 +113,25 @@ use Expand All (⌘⇧E) or Collapse All (⌘⇧C) to dig deeper or reset it.
 
     make test                # lint-readonly + swift test (includes sandbox verification tests)
     make bundle              # build/DiskReport.app for local runs: open build/DiskReport.app --args --show-report
+
+Layout:
+
+    Sources/DiskReportCore    walker, SQLite store, comparison queries, retention, logging (the only writer)
+    Sources/diskreport-scan   headless scanner CLI run by launchd
+    Sources/DiskReportUI      view-model logic for the report (no SwiftUI, fully unit tested)
+    Sources/DiskReport        SwiftUI menu bar app
+    Resources/                sandbox profile, launchd wrapper and plist, app Info.plist
+    Scripts/                  lint-readonly.sh, bundle-app.sh
+    Tests/                    XCTest suites, including the sandbox verification tests
+    docs/superpowers/         design spec and implementation plan
+
+Extension points already in place: `DirectoryClassifier` (label `node_modules`, virtualenvs, `.git`,
+build output and archives; v1 ships a no-op) and `NotableRule` (rules that badge the menu bar icon when
+something needs attention; v1 ships none).
+
+## Roadmap
+
+- Directory classification with a "reclaimable if rebuilt" total per project.
+- Menu bar badge and optional notification when free space drops below a threshold or a folder grows
+  more than a set amount in a day.
+- Add-root UI, size trend sparklines from the retained snapshots.
