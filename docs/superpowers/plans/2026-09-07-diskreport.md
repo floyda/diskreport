@@ -2297,7 +2297,7 @@ git commit -m "feat(core): retention policy (daily/weekly/monthly)"
 - Produces:
   - `public final class Logger { init(directory: URL, maxFiles: Int = 14, now: Date = Date()) throws; func log(_ message: String); static func fileName(for: Date) -> String; var fileURL: URL }`
   - `public final class LockFile { init(url: URL) throws; enum Error: Swift.Error, Equatable { case alreadyHeld, cannotOpen(String) } }`
-  - CLI: `diskreport-scan [--config PATH] [--data-dir PATH] [--log-dir PATH] [--self-test-write PATH]`. Exit codes per Global Constraints. Summary lines on stdout: `diskreport-scan: root=<path> status=<completed|failed> total=<bytes> files=<n> dirs=<n> skipped=<n> duration=<s>s` per root and `diskreport-scan: done status=<ok|failed>`.
+  - CLI: `diskreport-scan [--config PATH] [--data-dir PATH] [--log-dir PATH] [--self-test-write PATH]`. Exit codes per Global Constraints. Summary lines on stdout: `diskreport-scan: root=<path> status=completed total=<bytes> files=<n> dirs=<n> skipped=<n> duration=<s>s` for a completed root, `diskreport-scan: root=<path> status=failed error=<message>` for a failed root, and `diskreport-scan: done status=<ok|failed>` at the end. Retention pruning runs in its own do/catch after completion; a pruning failure only logs a warning.
 
 - [ ] **Step 1: Write failing tests for Logger and LockFile**
 
