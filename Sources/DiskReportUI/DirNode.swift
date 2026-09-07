@@ -23,3 +23,9 @@ public final class DirNode: Identifiable {
         for c in children { c.sortChildrenRecursively(by: areInIncreasingOrder) }
     }
 }
+
+/// A tree is built by `TreeBuilder` on a background task and then handed to the main actor exclusively:
+/// the building task drops every reference the moment it returns the roots, and nothing mutates a node
+/// afterwards. That is a transfer of ownership the compiler cannot see, so it is asserted here rather than
+/// paying for a class-wide lock on a type whose whole job is to be read from one actor.
+extension DirNode: @unchecked Sendable {}

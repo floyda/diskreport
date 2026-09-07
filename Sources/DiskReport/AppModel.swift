@@ -50,19 +50,23 @@ final class AppModel: ObservableObject {
         loadGeneration += 1
         let generation = loadGeneration
         Task {
-            let loaded: [RootReport] = await Task.detached(priority: .userInitiated) {
-                guard FileManager.default.fileExists(atPath: dbURL.path) else { return [] }
+            // Both the query and the tree build happen here: at 100k+ rows, building on the main actor
+            // would block the window for as long as the query it follows.
+            let loaded: ([RootReport], [DirNode]) = await Task.detached(priority: .userInitiated) {
+                guard FileManager.default.fileExists(atPath: dbURL.path) else { return ([], []) }
                 do {
                     let store = try Store(url: dbURL)
-                    return try ReportLoader.loadRootReports(store: store)
+                    let reports = try ReportLoader.loadRootReports(store: store)
+                    return (reports, TreeBuilder.build(reports))
                 } catch {
                     NSLog("DiskReport: load failed: \(error)")
-                    return []
+                    return ([], [])
                 }
             }.value
+
             guard generation == self.loadGeneration else { return }
-            self.reports = loaded
-            self.viewModel.load(reports: loaded, now: Int64(Date().timeIntervalSince1970))
+            self.reports = loaded.0
+            self.viewModel.load(roots: loaded.1, now: Int64(Date().timeIntervalSince1970))
             self.lastLoaded = Date()
             self.isLoading = false
         }

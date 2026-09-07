@@ -63,7 +63,14 @@ public final class ReportViewModel: ObservableObject {
     public init() {}
 
     public func load(reports: [RootReport], now: Int64) {
-        roots = TreeBuilder.build(reports)
+        load(roots: TreeBuilder.build(reports), now: now)
+    }
+
+    /// Adopts a tree built elsewhere. Building it costs a pass over every row, so the app builds it on the
+    /// same background task as the database read and hands the finished tree over (see `DirNode`'s
+    /// `@unchecked Sendable` note).
+    public func load(roots: [DirNode], now: Int64) {
+        self.roots = roots
         self.now = now
         expanded = []
         for root in roots { expandDefault(root) }
