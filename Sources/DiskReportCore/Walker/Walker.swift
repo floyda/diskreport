@@ -22,9 +22,17 @@ public enum WalkError: Error, Equatable {
 /// Never follows symlinks, never crosses devices, counts hard links once, uses allocated size.
 public struct Walker {
     private let classifier: DirectoryClassifier
+    private let descendPolicy: (_ entryDevice: dev_t, _ rootDevice: dev_t, _ path: String) -> Bool
 
     public init(classifier: DirectoryClassifier = NoClassifier()) {
         self.classifier = classifier
+        self.descendPolicy = { entry, root, _ in Walker.shouldDescend(entryDevice: entry, rootDevice: root) }
+    }
+
+    init(classifier: DirectoryClassifier = NoClassifier(),
+         descendPolicy: @escaping (_ entryDevice: dev_t, _ rootDevice: dev_t, _ path: String) -> Bool) {
+        self.classifier = classifier
+        self.descendPolicy = descendPolicy
     }
 
     public static func shouldDescend(entryDevice: dev_t, rootDevice: dev_t) -> Bool {
@@ -90,10 +98,16 @@ public struct Walker {
                 let childPath = path + "/" + name
 
                 if (est.st_mode & S_IFMT) == S_IFDIR {
-                    if Self.shouldDescend(entryDevice: est.st_dev, rootDevice: ctx.rootDevice) {
+                    if descendPolicy(est.st_dev, ctx.rootDevice, childPath) {
                         subdirs.append((childPath, est))
                     } else {
-                        acc.bytes += Self.allocated(est) // mount point itself; do not descend
+                        // Mount point itself; record it but do not descend into it.
+                        // (acc.newest already picked up est's mtime above.)
+                        let mountBytes = Self.allocated(est)
+                        let mountKind = classifier.classify(path: childPath, name: name, entries: DirectoryEntrySummary(childNames: []))
+                        ctx.stats.append(DirStat(path: childPath, parentPath: path, depth: depth + 1,
+                                                 bytes: mountBytes, fileCount: 0, newestMtime: Self.mtime(est), kind: mountKind))
+                        acc.bytes += mountBytes
                     }
                 } else {
                     acc.fileCount += 1

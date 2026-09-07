@@ -149,6 +149,35 @@ final class WalkerTests: XCTestCase {
         XCTAssertNil(stat(result, root + "/proj/src")?.kind)
     }
 
+    func testMountPointIsRecordedButNotDescended() throws {
+        struct MarkMount: DirectoryClassifier {
+            func classify(path: String, name: String, entries: DirectoryEntrySummary) -> String? {
+                name == "mnt" ? "mount" : nil
+            }
+        }
+        let tmp = makeTempDir()
+        tmp.file("root/mnt/inner/deep.bin", size: 4096)
+        tmp.file("root/ok.txt")
+        let root = realpathString(tmp.path("root"))
+
+        let walker = Walker(classifier: MarkMount(), descendPolicy: { _, _, path in !path.hasSuffix("/mnt") })
+        let result = try walker.walk(root: root)
+
+        let mnt = try XCTUnwrap(stat(result, root + "/mnt"))
+        XCTAssertEqual(mnt.depth, 1)
+        XCTAssertEqual(mnt.parentPath, root)
+        XCTAssertEqual(mnt.fileCount, 0)
+        XCTAssertEqual(mnt.kind, "mount", "classifier must be called for the mount point itself")
+
+        XCTAssertNil(result.stats.first { $0.path.contains("/mnt/") }, "must not descend into the mount point")
+
+        let r = try XCTUnwrap(stat(result, root))
+        XCTAssertEqual(r.fileCount, 1, "only ok.txt; the mount point's inner file must not be counted")
+        XCTAssertLessThan(r.bytes, 4096 + 8192, "the mount point's inner file must not be counted")
+
+        XCTAssertEqual(result.stats.count, 2)
+    }
+
     func testVolumeInfo() throws {
         let info = try VolumeInfo.query(path: NSHomeDirectory())
         XCTAssertGreaterThan(info.totalBytes, 0)
