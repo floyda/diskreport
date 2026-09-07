@@ -1,0 +1,10 @@
+;; DiskReport scanner sandbox.
+;; Read anywhere; write only under the DiskReport data and log folders (and /dev/null); no network.
+;; Usage: sandbox-exec -D DATA_DIR=<path> -D LOG_DIR=<path> -f scan.sb diskreport-scan ...
+(version 1)
+(allow default)
+(deny network*)
+(deny file-write*)
+(allow file-write* (subpath (param "DATA_DIR")))
+(allow file-write* (subpath (param "LOG_DIR")))
+(allow file-write-data (literal "/dev/null"))

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Appends timestamped lines to `scan-YYYY-MM-DD.log` and keeps at most `maxFiles` such files.
@@ -17,11 +18,19 @@ public final class Logger {
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appendingPathComponent(Logger.fileName(for: now))
-        if !fm.fileExists(atPath: fileURL.path) {
-            fm.createFile(atPath: fileURL.path, contents: nil)
+        // Open (creating if needed) with a raw syscall rather than FileManager.createFile +
+        // FileHandle(forWritingTo:): under the scan sandbox profile (Resources/scan.sb),
+        // FileManager's higher-level file-creation path fails silently even for paths inside
+        // the allowed subpath, while a plain open() succeeds. O_APPEND also makes every write
+        // land at end-of-file without a separate seek, so concurrent loggers can't clobber it.
+        let fd = open(fileURL.path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+        guard fd >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [
+                NSFilePathErrorKey: fileURL.path,
+                NSLocalizedDescriptionKey: "open(\(fileURL.path)) failed: \(String(cString: strerror(errno)))",
+            ])
         }
-        handle = try FileHandle(forWritingTo: fileURL)
-        try handle.seekToEnd()
+        handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         Logger.rotate(directory: directory, maxFiles: maxFiles)
     }
 

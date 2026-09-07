@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 
@@ -48,6 +49,17 @@ extension XCTestCase {
 }
 
 /// Resolves /var → /private/var etc. so comparisons against walker output are stable.
+///
+/// Foundation's `resolvingSymlinksInPath()` deliberately leaves /tmp, /var, and /etc
+/// unresolved, so it does not fully canonicalize paths under the test temp directory
+/// (which lives under /var/folders, itself a symlink to /private/var/folders). That
+/// matters for SandboxTests: sandbox-exec's `(subpath (param ...))` check matches
+/// against the fully-resolved path, so DATA_DIR/LOG_DIR params (and any path compared
+/// against them) must be canonical. Go straight to libc realpath(3) instead.
 func realpathString(_ path: String) -> String {
-    URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    var buf = [Int8](repeating: 0, count: Int(PATH_MAX))
+    guard Darwin.realpath(path, &buf) != nil else {
+        fatalError("realpath(\(path)) failed: \(String(cString: strerror(errno)))")
+    }
+    return String(cString: buf)
 }
