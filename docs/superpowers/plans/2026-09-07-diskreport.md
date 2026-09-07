@@ -358,7 +358,7 @@ final class TempDir {
 extension XCTestCase {
     /// Temp directory removed in this test's teardown, even if the test fails.
     func makeTempDir() -> TempDir {
-        let tmp = makeTempDir()
+        let tmp = TempDir()
         addTeardownBlock { tmp.remove() }
         return tmp
     }
