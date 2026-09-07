@@ -11,6 +11,12 @@ struct FilterStrip: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            Button("Expand All") { viewModel.expandAll() }
+                .buttonStyle(.bordered)
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+            Button("Collapse All") { viewModel.collapseAll() }
+                .buttonStyle(.bordered)
+                .keyboardShortcut("c", modifiers: [.command, .shift])
             Spacer()
             TextField("Search path", text: $viewModel.searchText)
                 .textFieldStyle(.roundedBorder)

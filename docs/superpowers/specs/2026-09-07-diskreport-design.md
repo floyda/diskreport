@@ -249,7 +249,7 @@ Operational: refuse root, lock file, low priority, logs rotated (keep 14 files).
 Single window, opened by launchd after each scan (`open -a DiskReport --args --show-report`) and by the menu item. Three regions:
 
 1. **Summary bar.** Volume free space with delta vs yesterday; per-root total and delta; last scan time and duration; skipped-entry count if non-zero. Warning banner when the latest scan for any root failed or is older than 48 hours, showing the last error line from the log.
-2. **Outline table.** One top-level node per root, expanded to depth 3 by default, deeper levels expandable on demand (lazy-loaded per node from `dir_stats` by `parent_path`). Columns: Name, Size, Δ Day, Δ Week, Δ Month, Last Modified, Files, (Kind — hidden in v1). Deltas show signed human sizes, tinted by direction; "—" when no baseline. All columns sort; sort applies within each level. Deleted directories appear greyed with strikethrough.
+2. **Outline table.** One top-level node per root, expanded one level by default (each root shows its top-level folders); Expand All opens to depth 3 and Collapse All returns to the default, deeper levels expandable on demand (lazy-loaded per node from `dir_stats` by `parent_path`). Columns: Name, Size, Δ Day, Δ Week, Δ Month, Last Modified, Files, (Kind — hidden in v1). Deltas show signed human sizes, tinted by direction; "—" when no baseline. All columns sort; sort applies within each level. Deleted directories appear greyed with strikethrough.
 3. **Filter strip.** Segmented quick filters: All · Grew today · Grew this week · New · Deleted · Stale > 1 month · Stale > 6 months. A search field matches path substrings case-insensitively. Filters apply at every depth and auto-expand ancestors of matches.
 
 ### Acting on a row

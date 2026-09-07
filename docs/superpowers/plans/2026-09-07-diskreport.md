@@ -4704,3 +4704,8 @@ git commit -m "feat: install/uninstall/schedule targets and README"
   `AppModel` builds it in the same detached task as the query, handing the roots over (`DirNode` is
   `@unchecked Sendable` for that transfer). Reloads are also serialised, since the WAL watcher fires several
   times per scan and each event used to start another full load.
+- **Default expansion depth (spec §7).** Expanding every root to depth 3 by default buried the report under
+  three levels of folders on first open. `ReportViewModel.defaultVisibleDepth` is now `1` (each root opens
+  showing its top-level children only), with `deepVisibleDepth = 3` kept as the depth `expandAll()` opens
+  to. `FilterStrip` gained Expand All (⌘⇧E) and Collapse All (⌘⇧C) buttons so users can still reach the old
+  depth or return to the collapsed default in one action.

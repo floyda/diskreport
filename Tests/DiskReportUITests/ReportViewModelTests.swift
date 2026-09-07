@@ -4,20 +4,24 @@ import DiskReportCore
 
 @MainActor
 final class ReportViewModelTests: XCTestCase {
-    func testDefaultExpansionShowsThreeLevels() {
+    func testDefaultExpansionShowsOneLevel() {
         let vm = ReportViewModel()
         vm.load(reports: [Fx.deepReport()], now: Fx.now)
-        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/x"])
-        XCTAssertEqual(vm.visibleRows.map(\.depth), [0, 1, 2, 3, 1])
-        XCTAssertTrue(vm.visibleRows[2].isExpanded)
-        XCTAssertFalse(vm.visibleRows[3].isExpanded)
-        XCTAssertTrue(vm.visibleRows[3].hasChildren)
-        XCTAssertFalse(vm.visibleRows[4].hasChildren)
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/x"])
+        XCTAssertEqual(vm.visibleRows.map(\.depth), [0, 1, 1])
+        XCTAssertTrue(vm.visibleRows[0].isExpanded)
+        XCTAssertFalse(vm.visibleRows[1].isExpanded)
+        XCTAssertTrue(vm.visibleRows[1].hasChildren)
+        XCTAssertFalse(vm.visibleRows[2].hasChildren)
     }
 
     func testToggleExpandsAndCollapses() {
         let vm = ReportViewModel()
         vm.load(reports: [Fx.deepReport()], now: Fx.now)
+        vm.toggle("/w/a")
+        XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b"))
+        vm.toggle("/w/a/b")
+        XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b/c"))
         vm.toggle("/w/a/b/c")
         XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b/c/d"))
         vm.toggle("/w/a")
@@ -25,6 +29,20 @@ final class ReportViewModelTests: XCTestCase {
         XCTAssertFalse(vm.isExpanded("/w/a"))
         vm.toggle("/w/a")
         XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b/c/d"), "nested expansion state is remembered")
+    }
+
+    func testExpandAllToDepthThenCollapseAll() {
+        let vm = ReportViewModel()
+        vm.load(reports: [Fx.deepReport()], now: Fx.now)
+        vm.expandAll()
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/x"])
+        vm.toggle("/w/a/b/c")
+        XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b/c/d"))
+        vm.collapseAll()
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/x"])
+        vm.expandAll()
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/x"],
+                       "collapseAll cleared the deeper expansion state, so /w/a/b/c/d is not reopened")
     }
 
     func testMultipleRootsAreListedInOrder() {
@@ -72,9 +90,9 @@ final class ReportViewModelTests: XCTestCase {
         vm.load(reports: [Fx.report("/w", rows: rows)], now: Fx.now)
         vm.filter = .grewToday
         XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/a/b/c/d", "/w/y"],
-                       "ancestors of matches shown and expanded even beyond depth 3; shrinking /w/x hidden; new counts as grew")
+                       "ancestors of matches shown and expanded even beyond the default depth; shrinking /w/x hidden; new counts as grew")
         vm.filter = .all
-        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/x", "/w/y"], "user expansion state unchanged by filtering")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/x", "/w/y"], "user expansion state unchanged by filtering")
     }
 
     func testFilterStaleBuckets() {
@@ -107,7 +125,7 @@ final class ReportViewModelTests: XCTestCase {
         vm.searchText = "C/D"
         XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/a/b/c/d"])
         vm.searchText = ""
-        XCTAssertEqual(vm.visibleRows.count, 5)
+        XCTAssertEqual(vm.visibleRows.count, 3)
     }
 
     func testVisibleRowCarriesDeltasAndSortKeys() {
@@ -129,6 +147,6 @@ final class ReportViewModelTests: XCTestCase {
         vm.load(reports: [Fx.deepReport()], now: Fx.now)
         vm.toggle("/w/a")
         vm.load(reports: [Fx.deepReport()], now: Fx.now)
-        XCTAssertEqual(vm.visibleRows.count, 5)
+        XCTAssertEqual(vm.visibleRows.count, 3)
     }
 }

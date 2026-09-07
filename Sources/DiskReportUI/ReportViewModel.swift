@@ -47,8 +47,13 @@ public struct VisibleRow: Identifiable, Equatable {
 
 @MainActor
 public final class ReportViewModel: ObservableObject {
-    /// Rows with depth <= this are visible by default (root is depth 0).
-    public static let defaultVisibleDepth = 3
+    /// Nodes with depth less than this are expanded by default, revealing their children (root is
+    /// depth 0). With the default of `1`, each root is expanded so its top-level children are
+    /// visible, but nothing deeper is expanded automatically.
+    public static let defaultVisibleDepth = 1
+
+    /// Depth `expandAll()` opens the tree to.
+    public static let deepVisibleDepth = 3
 
     @Published public private(set) var visibleRows: [VisibleRow] = []
     @Published public var filter: QuickFilter = .all { didSet { rebuild() } }
@@ -73,7 +78,7 @@ public final class ReportViewModel: ObservableObject {
         self.roots = roots
         self.now = now
         expanded = []
-        for root in roots { expandDefault(root) }
+        for root in roots { expand(root, toDepth: Self.defaultVisibleDepth) }
         rebuild()
     }
 
@@ -90,12 +95,27 @@ public final class ReportViewModel: ObservableObject {
         rebuild()
     }
 
+    /// Collapses the tree back to the default: only each root is expanded, so their top-level
+    /// children stay listed.
+    public func collapseAll() {
+        expanded = []
+        for root in roots { expand(root, toDepth: Self.defaultVisibleDepth) }
+        rebuild()
+    }
+
+    /// Expands every node shallower than `depth` that has children, leaving already-expanded
+    /// deeper nodes alone.
+    public func expandAll(toDepth depth: Int = ReportViewModel.deepVisibleDepth) {
+        for root in roots { expand(root, toDepth: depth) }
+        rebuild()
+    }
+
     // MARK: - Internals
 
-    private func expandDefault(_ node: DirNode) {
-        guard node.row.depth < Self.defaultVisibleDepth, !node.children.isEmpty else { return }
+    private func expand(_ node: DirNode, toDepth depth: Int) {
+        guard node.row.depth < depth, !node.children.isEmpty else { return }
         expanded.insert(node.id)
-        for c in node.children { expandDefault(c) }
+        for c in node.children { expand(c, toDepth: depth) }
     }
 
     private var isFiltering: Bool { filter != .all || !searchText.isEmpty }

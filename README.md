@@ -60,7 +60,8 @@ Side effects worth knowing:
 
 The disk icon in the menu bar opens the report. Double-click a row (or ⌘R) to reveal it in Finder with the
 folder selected. Right-click for Copy Path and Open in Terminal. Filters: Grew today / this week, New,
-Deleted, Stale > 1 month / > 6 months. Search matches any part of the path.
+Deleted, Stale > 1 month / > 6 months. Search matches any part of the path. The tree opens one level deep;
+use Expand All (⌘⇧E) or Collapse All (⌘⇧C) to dig deeper or reset it.
 
 ## Uninstall
 
