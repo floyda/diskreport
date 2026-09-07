@@ -38,11 +38,12 @@ enum CLI {
     }
 
     /// Writes a config pointing at `roots` and returns the standard argument list for an isolated run.
-    static func standardArgs(tmp: TempDir, roots: [String]) throws -> [String] {
+    /// `minRecordedBytes` defaults to 0 so fixture directories of a few KB are still recorded.
+    static func standardArgs(tmp: TempDir, roots: [String], minRecordedBytes: Int = 0) throws -> [String] {
         let data = tmp.mkdir("data")
         let logs = tmp.mkdir("logs")
         let cfg = tmp.path("config.json")
-        let json = try JSONSerialization.data(withJSONObject: ["roots": roots])
+        let json = try JSONSerialization.data(withJSONObject: ["roots": roots, "minRecordedBytes": minRecordedBytes])
         try json.write(to: URL(fileURLWithPath: cfg))
         return ["--config", cfg, "--data-dir", data, "--log-dir", logs]
     }
@@ -62,6 +63,7 @@ final class ScannerCLITests: XCTestCase {
         XCTAssertTrue(r.stdout.contains("root=\(root) status=completed"), r.stdout)
         XCTAssertTrue(r.stdout.contains("files=2"), r.stdout)
         XCTAssertTrue(r.stdout.contains("dirs=3"), r.stdout)
+        XCTAssertTrue(r.stdout.contains("walked=3"), r.stdout)
         XCTAssertTrue(r.stdout.contains("done status=ok"), r.stdout)
 
         let store = try Store(url: URL(fileURLWithPath: tmp.path("data/diskreport.sqlite")))
@@ -151,6 +153,26 @@ final class ScannerCLITests: XCTestCase {
         XCTAssertEqual(scanA.status, .completed)
         let scanB = try XCTUnwrap(try store.latestScan(rootID: try store.rootID(for: rootBPath)))
         XCTAssertEqual(scanB.status, .failed)
+    }
+
+    func testMinRecordedBytesFiltersSmallDirectories() throws {
+        let tmp = makeTempDir()
+        tmp.file("root/big/one.bin", size: 2_000_000)
+        tmp.file("root/small/tiny.txt", size: 16)
+        let root = realpathString(tmp.path("root"))
+        let args = try CLI.standardArgs(tmp: tmp, roots: [root], minRecordedBytes: 1_000_000)
+
+        let r = try CLI.run(args)
+
+        XCTAssertEqual(r.status, 0, r.stderr)
+        XCTAssertTrue(r.stdout.contains("dirs=2"), r.stdout)
+        XCTAssertTrue(r.stdout.contains("walked=3"), r.stdout)
+
+        let store = try Store(url: URL(fileURLWithPath: tmp.path("data/diskreport.sqlite")))
+        let scan = try XCTUnwrap(try store.latestCompletedScan(rootID: try store.rootID(for: root)))
+        XCTAssertEqual(scan.dirCount, 2)
+        XCTAssertEqual(try store.dirStats(scanID: scan.id).map(\.path), [root, root + "/big"],
+                       "the root is always recorded; root/small is walked but too small to store")
     }
 
     func testRunningScanFromPreviousCrashIsMarkedFailed() throws {

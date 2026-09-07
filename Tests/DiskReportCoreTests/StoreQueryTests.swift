@@ -86,6 +86,52 @@ final class StoreQueryTests: XCTestCase {
         XCTAssertEqual(try store.dirStatCount(scanID: b), 1)
     }
 
+    func testTrimDirStatsRemovesSmallRowsAndKeepsRoot() throws {
+        let stats = [
+            DirStat(path: "/r", parentPath: nil, depth: 0, bytes: 5, fileCount: 3, newestMtime: 5),
+            DirStat(path: "/r/big", parentPath: "/r", depth: 1, bytes: 1_000, fileCount: 1, newestMtime: 5),
+            DirStat(path: "/r/small", parentPath: "/r", depth: 1, bytes: 999, fileCount: 1, newestMtime: 5),
+        ]
+        let id = try completed(startedAt: 1, finishedAt: 2, stats: stats)
+
+        XCTAssertEqual(try store.trimDirStats(rootID: rootID, below: 1_000), 1)
+        XCTAssertEqual(try store.dirStats(scanID: id).map(\.path), ["/r", "/r/big"],
+                       "depth-0 root row survives even though it is below the threshold")
+    }
+
+    func testTrimDirStatsAppliesToEveryScanOfTheRootButNoOthers() throws {
+        let stats = [
+            DirStat(path: "/r", parentPath: nil, depth: 0, bytes: 5, fileCount: 1, newestMtime: 5),
+            DirStat(path: "/r/small", parentPath: "/r", depth: 1, bytes: 10, fileCount: 1, newestMtime: 5),
+        ]
+        let old = try completed(startedAt: 1, finishedAt: 2, stats: stats)
+        let recent = try completed(startedAt: 3, finishedAt: 4, stats: stats)
+
+        let otherRoot = try store.rootID(for: "/other")
+        let otherScan = try store.beginScan(rootID: otherRoot, startedAt: 5)
+        try store.insertDirStats(scanID: otherScan, [DirStat(path: "/other/small", parentPath: "/other", depth: 1, bytes: 10, fileCount: 1, newestMtime: 5)])
+        try store.completeScan(id: otherScan, finishedAt: 6, summary: summary)
+
+        XCTAssertEqual(try store.trimDirStats(rootID: rootID, below: 100), 2, "both scans of the root are trimmed")
+        XCTAssertEqual(try store.dirStatCount(scanID: old), 1)
+        XCTAssertEqual(try store.dirStatCount(scanID: recent), 1)
+        XCTAssertEqual(try store.dirStatCount(scanID: otherScan), 1, "another root is untouched")
+    }
+
+    func testTrimDirStatsWithZeroThresholdIsNoop() throws {
+        let stats = [DirStat(path: "/r/small", parentPath: "/r", depth: 1, bytes: 0, fileCount: 0, newestMtime: 5)]
+        let id = try completed(startedAt: 1, finishedAt: 2, stats: stats)
+        XCTAssertEqual(try store.trimDirStats(rootID: rootID, below: 0), 0)
+        XCTAssertEqual(try store.dirStatCount(scanID: id), 1)
+    }
+
+    func testVacuumKeepsData() throws {
+        let stats = [DirStat(path: "/r", parentPath: nil, depth: 0, bytes: 3, fileCount: 2, newestMtime: 5)]
+        let id = try completed(startedAt: 1, finishedAt: 2, stats: stats)
+        try store.vacuum()
+        XCTAssertEqual(try store.dirStats(scanID: id), stats)
+    }
+
     func testDeleteScansWithEmptyListIsNoop() throws {
         try completed(startedAt: 1, finishedAt: 2)
         try store.deleteScans(ids: [])

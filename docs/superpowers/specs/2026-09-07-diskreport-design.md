@@ -76,10 +76,12 @@ launchd (07:00) ──▶ sandbox-exec ──▶ diskreport-scan ──▶ diskr
 ```json
 {
   "roots": ["~/Workspace"],
-  "retention": { "dailyDays": 45, "weeklyWeeks": 52 }
+  "retention": { "dailyDays": 45, "weeklyWeeks": 52 },
+  "minRecordedBytes": 1000000
 }
 ```
 
+- `minRecordedBytes` (default 1 MB) is the floor for storing a directory row; see section 5.
 - Tilde is expanded. Each root must resolve to an existing directory on a local volume.
 - The scanner rejects a config where one root contains another (would double count) with a message naming both and advising keeping the outer one.
 - Each root produces its own `scans` row per run, so a failure in one root does not invalidate another.
@@ -144,7 +146,33 @@ CREATE TABLE dir_stats (
 CREATE INDEX dir_stats_parent ON dir_stats(scan_id, parent_path);
 ```
 
-Scale estimate: ~100k directories per scan for the current Workspace, ~1.5–2 MB per snapshot after SQLite overhead. Retention keeps total size in the low hundreds of MB even with more roots.
+### Recorded-size threshold
+
+Measured on the first real scan of `~/Workspace`: 511,116 directories walked in 525 s, and storing one row
+for each of them cost 284 MB. Under the retention policy below that grows to roughly 26 GB — on a volume with
+59 GB free, the tool would become a meaningful consumer of the space it exists to diagnose.
+
+So not every walked directory is stored. A directory is written to `dir_stats` only when
+`bytes >= minRecordedBytes` (default 1,000,000) **or** it is the root itself (`depth = 0`). Smaller
+directories are still walked, and their bytes, file counts and mtimes still roll up into their ancestors;
+they simply do not get a row. The measured distribution for `~/Workspace`:
+
+| Threshold | Directories stored |
+|---|---|
+| 0 (every directory) | 511,116 |
+| 100 KB | 58,853 |
+| 1 MB (default) | 18,688 |
+| 10 MB | 7,516 |
+
+At the default this is roughly 10 MB per snapshot and a few GB across the full retention window.
+
+Consequences of the threshold, both accepted:
+
+- A directory that crosses `minRecordedBytes` between two scans has no row in the older snapshot, so it is
+  reported as **new** for that window with its full size as the delta — which is the useful reading anyway.
+- Lowering the threshold only affects future scans; raising it is applied to existing snapshots on the next
+  run (see retention below), which shrinks the database.
+
 
 ### Comparisons
 
@@ -164,6 +192,9 @@ After each successful run, per root:
 2. Older than that and within `weeklyWeeks` (52) weeks: keep the last completed scan of each ISO week.
 3. Older than that: keep the last completed scan of each calendar month.
 4. Delete the rest (cascades to `dir_stats`). Failed scans older than 45 days are deleted.
+5. Delete `dir_stats` rows with `bytes < minRecordedBytes AND depth > 0` across all remaining scans of the
+   root, so a raised threshold (or one introduced after a snapshot was taken) shrinks existing data.
+6. If anything was pruned or trimmed, `VACUUM` once at the end of the run to return the pages to the volume.
 
 Pruning is the only delete the system performs and it only touches its own database.
 

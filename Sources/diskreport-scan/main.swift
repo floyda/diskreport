@@ -68,6 +68,8 @@ do {
 }
 
 var anyFailed = false
+var needsVacuum = false
+var totalTrimmed = 0
 for root in roots {
     let started = now()
     let startDate = Date()
@@ -82,14 +84,17 @@ for root in roots {
         let result = try Walker().walk(root: root)
         for s in result.skipped { logger.log("skipped \(s.path): \(s.reason)") }
         let volume = try VolumeInfo.query(path: root)
-        try store.insertDirStats(scanID: scanID, result.stats)
+        // Small directories are walked and counted toward their ancestors but not stored: a row per
+        // directory would cost tens of GB over the retention window on a busy Workspace.
+        let recorded = result.stats.filter { $0.bytes >= config.minRecordedBytes || $0.depth == 0 }
+        try store.insertDirStats(scanID: scanID, recorded)
         let summary = ScanSummary(totalBytes: result.totalBytes, fileCount: result.fileCount,
-                                  dirCount: Int64(result.stats.count), volumeFreeBytes: volume.freeBytes,
+                                  dirCount: Int64(recorded.count), volumeFreeBytes: volume.freeBytes,
                                   volumeTotalBytes: volume.totalBytes, skippedCount: Int64(result.skipped.count))
         try store.completeScan(id: scanID, finishedAt: now(), summary: summary)
 
         let duration = Int(Date().timeIntervalSince(startDate))
-        let line = "root=\(root) status=completed total=\(summary.totalBytes) files=\(summary.fileCount) dirs=\(summary.dirCount) skipped=\(summary.skippedCount) duration=\(duration)s"
+        let line = "root=\(root) status=completed total=\(summary.totalBytes) files=\(summary.fileCount) dirs=\(summary.dirCount) walked=\(result.stats.count) skipped=\(summary.skippedCount) duration=\(duration)s"
         logger.log(line)
         print("diskreport-scan: \(line)")
     } catch {
@@ -111,11 +116,34 @@ for root in roots {
             let toDelete = RetentionPolicy.scansToDelete(try store.scans(rootID: rid), now: now(), retention: config.retention)
             if !toDelete.isEmpty {
                 try store.deleteScans(ids: toDelete)
+                needsVacuum = true
                 logger.log("pruned \(toDelete.count) old scan(s) for root=\(root)")
             }
         } catch {
             logger.log("warning: pruning failed for root=\(root): \(error)")
         }
+        do {
+            // Also applies the current threshold to snapshots recorded under an older (or no) threshold.
+            let trimmed = try store.trimDirStats(rootID: rid, below: config.minRecordedBytes)
+            if trimmed > 0 {
+                totalTrimmed += trimmed
+                needsVacuum = true
+                logger.log("trimmed \(trimmed) dir_stats row(s) below \(config.minRecordedBytes) bytes for root=\(root)")
+            }
+        } catch {
+            logger.log("warning: trimming dir_stats failed for root=\(root): \(error)")
+        }
+    }
+}
+
+if needsVacuum {
+    do {
+        try store.vacuum()
+        let attributes = try? FileManager.default.attributesOfItem(atPath: paths.databaseURL.path)
+        let size = (attributes?[.size] as? NSNumber)?.int64Value
+        logger.log("vacuumed after trimming \(totalTrimmed) row(s); database is \(size.map(String.init) ?? "?") bytes")
+    } catch {
+        logger.log("warning: vacuum failed: \(error)")
     }
 }
 

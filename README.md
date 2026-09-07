@@ -15,10 +15,36 @@ DiskReport never modifies anything under a scanned root. See `docs/superpowers/s
 
 Config lives at `~/Library/Application Support/DiskReport/config.json`:
 
-    { "roots": ["~/Workspace"], "retention": { "dailyDays": 45, "weeklyWeeks": 52 } }
+    { "roots": ["~/Workspace"], "retention": { "dailyDays": 45, "weeklyWeeks": 52 }, "minRecordedBytes": 1000000 }
 
 Add more roots (e.g. `"~/Library"`) as separate entries; a root inside another root is rejected.
 Scanning `~/Library` may need Full Disk Access for `diskreport-scan` in System Settings → Privacy & Security.
+
+## Disk footprint
+
+DiskReport should never become a meaningful consumer of the space it diagnoses, so it does not store a row
+for every directory it walks. `minRecordedBytes` (default 1 MB) is the floor: smaller directories are still
+walked and still count toward their parents' size, file count and last-modified time, they just get no row of
+their own. Measured on a 511,116-directory `~/Workspace`:
+
+| `minRecordedBytes` | Rows per snapshot | Database per snapshot |
+|---|---|---|
+| `0` (everything) | 511,116 | ~284 MB |
+| `100000` (100 KB) | 58,853 | ~33 MB |
+| `1000000` (default) | 18,688 | ~10 MB |
+| `10000000` (10 MB) | 7,516 | ~4 MB |
+
+With the default retention (45 daily + 52 weekly + monthly snapshots) that is a few GB at `0` per day — hence
+the default. Tuning:
+
+- **Want more detail?** Lower `minRecordedBytes` (e.g. `100000`). It applies to future scans only.
+- **Database too big?** Raise `minRecordedBytes` and/or shorten `retention`. Both are applied to *existing*
+  snapshots on the next scan, which then `VACUUM`s, so the file shrinks on disk without any manual step.
+- Each scan logs `dirs=` (rows recorded) and `walked=` (directories visited) in its summary line, plus the
+  trimmed row count and resulting database size when it shrinks anything.
+
+One side effect worth knowing: a directory that grows past the threshold between two scans has no row in the
+older snapshot, so the report shows it as **new** for that window with its full size as the delta.
 
 ## Use
 

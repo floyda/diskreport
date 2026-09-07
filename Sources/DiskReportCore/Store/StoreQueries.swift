@@ -36,6 +36,25 @@ public extension Store {
         return out
     }
 
+    /// Deletes directory rows below `threshold` bytes across every scan of `root`, keeping depth-0 root rows.
+    /// Applies the current `minRecordedBytes` to snapshots recorded before the threshold existed (or under a
+    /// lower one), so lowering nothing but the config shrinks the database on the next run. Returns rows deleted.
+    @discardableResult
+    func trimDirStats(rootID: Int64, below threshold: Int64) throws -> Int {
+        guard threshold > 0 else { return 0 }
+        try db.prepare("""
+            DELETE FROM dir_stats
+            WHERE bytes < ? AND depth > 0
+              AND scan_id IN (SELECT id FROM scans WHERE root_id = ?)
+            """).bind(1, threshold).bind(2, rootID).run()
+        return db.changes
+    }
+
+    /// Reclaims free pages after pruning or trimming. Rewrites the whole file, so call it once per run at most.
+    func vacuum() throws {
+        try db.exec("VACUUM")
+    }
+
     func deleteScans(ids: [Int64]) throws {
         guard !ids.isEmpty else { return }
         try db.transaction {

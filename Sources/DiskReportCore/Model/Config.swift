@@ -27,20 +27,30 @@ public enum ConfigError: Error, Equatable, CustomStringConvertible {
 }
 
 public struct Config: Codable, Equatable, Sendable {
+    /// Default floor for storing a directory row: 1 MB. Below this a directory is still walked and
+    /// still counts toward its ancestors, it just is not worth a database row of its own.
+    public static let defaultMinRecordedBytes: Int64 = 1_000_000
+
     public var roots: [String]
     public var retention: Retention
+    /// Directories smaller than this are not written to `dir_stats` (the root row is always written).
+    /// Keeps the database proportional to what the report actually shows instead of to the directory count.
+    public var minRecordedBytes: Int64
 
-    public init(roots: [String], retention: Retention = Retention()) {
+    public init(roots: [String], retention: Retention = Retention(),
+                minRecordedBytes: Int64 = Config.defaultMinRecordedBytes) {
         self.roots = roots
         self.retention = retention
+        self.minRecordedBytes = minRecordedBytes
     }
 
-    enum CodingKeys: String, CodingKey { case roots, retention }
+    enum CodingKeys: String, CodingKey { case roots, retention, minRecordedBytes }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         roots = try c.decode([String].self, forKey: .roots)
         retention = try c.decodeIfPresent(Retention.self, forKey: .retention) ?? Retention()
+        minRecordedBytes = try c.decodeIfPresent(Int64.self, forKey: .minRecordedBytes) ?? Config.defaultMinRecordedBytes
     }
 
     public static func parse(_ data: Data) throws -> Config {

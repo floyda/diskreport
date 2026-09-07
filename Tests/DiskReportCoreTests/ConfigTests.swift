@@ -13,6 +13,18 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(cfg.retention, Retention(dailyDays: 10, weeklyWeeks: 4))
     }
 
+    func testParseDefaultsMinRecordedBytes() throws {
+        let cfg = try Config.parse(Data(#"{"roots":["/a"]}"#.utf8))
+        XCTAssertEqual(cfg.minRecordedBytes, 1_000_000)
+    }
+
+    func testParseExplicitMinRecordedBytes() throws {
+        let cfg = try Config.parse(Data(#"{"roots":["/a"],"minRecordedBytes":0}"#.utf8))
+        XCTAssertEqual(cfg.minRecordedBytes, 0)
+        let big = try Config.parse(Data(#"{"roots":["/a"],"minRecordedBytes":10485760}"#.utf8))
+        XCTAssertEqual(big.minRecordedBytes, 10_485_760)
+    }
+
     func testResolvedRootsExpandsTildeAndStripsTrailingSlash() throws {
         let cfg = Config(roots: ["~/Some/Dir/"], retention: Retention())
         let home = FileManager.default.homeDirectoryForCurrentUser.path
