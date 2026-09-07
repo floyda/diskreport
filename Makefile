@@ -1,4 +1,4 @@
-.PHONY: build test lint release clean
+.PHONY: build test lint release bundle clean
 
 build:
 	swift build
@@ -11,6 +11,10 @@ lint:
 
 release: lint
 	swift build -c release
+
+bundle: release
+	chmod +x Scripts/bundle-app.sh
+	Scripts/bundle-app.sh
 
 clean:
 	rm -rf .build build
