@@ -253,6 +253,8 @@ Single window, opened by launchd after each scan (`open -a DiskReport --args --s
 - Reads the database at launch; watches `diskreport.sqlite-wal` and `diskreport.sqlite` via `DispatchSource` file events and reloads when a scan completes.
 - All queries off the main actor. The `DirNode` tree is built on the same background task as the query and
   handed to the main actor complete, so neither the SQLite read nor the tree construction runs on the UI thread.
+- Reloads are serialised: a file event arriving mid-load sets a pending flag rather than starting a second
+  query, and one further reload runs when the in-flight one finishes.
 
 ## 8. Scheduling, installation, failure handling
 

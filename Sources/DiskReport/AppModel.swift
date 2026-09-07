@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     private var watcher: DatabaseWatcher?
     private var runner: ScanRunner?
     private var loadGeneration = 0
+    private var loadInFlight = false
+    private var loadPending = false
 
     var summary: ReportSummary { ReportSummary.from(reports) }
     var hasNotices: Bool { !evaluator.notices(for: summary).isEmpty }
@@ -44,7 +46,16 @@ final class AppModel: ObservableObject {
         self.watcher = watcher
     }
 
+    /// Reloads the report from the database. Only one load runs at a time: the database watcher can fire
+    /// several times while a scan writes, and overlapping loads would each open the store and rebuild the
+    /// whole tree. A request arriving mid-load is collapsed into a single follow-up run.
     func reload() {
+        guard !loadInFlight else {
+            loadPending = true
+            return
+        }
+        loadInFlight = true
+
         let dbURL = paths.databaseURL
         isLoading = true
         loadGeneration += 1
@@ -64,12 +75,21 @@ final class AppModel: ObservableObject {
                 }
             }.value
 
+            defer { self.finishLoad() }
             guard generation == self.loadGeneration else { return }
             self.reports = loaded.0
             self.viewModel.load(roots: loaded.1, now: Int64(Date().timeIntervalSince1970))
             self.lastLoaded = Date()
             self.isLoading = false
         }
+    }
+
+    /// Releases the in-flight slot and runs one more load if a request came in while this one ran.
+    private func finishLoad() {
+        loadInFlight = false
+        guard loadPending else { return }
+        loadPending = false
+        reload()
     }
 
     func scanNow() {
