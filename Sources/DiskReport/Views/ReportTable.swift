@@ -40,12 +40,17 @@ struct ReportTable: View {
             viewModel.setSort(key: key, ascending: first.order == .forward)
         }
         .contextMenu(forSelectionType: String.self) { ids in
+            Button("Expand") { viewModel.expand(ids) }
+            Button("Collapse") { viewModel.collapse(ids) }
+            Divider()
             Button("Reveal in Finder") { reveal(ids) }
             Button("Copy Path") { copyPaths(ids) }
             Button("Open in Terminal") { openInTerminal(ids) }
         } primaryAction: { ids in
             reveal(ids)
         }
+        .onKeyPress(.rightArrow) { viewModel.expand(selection); return .handled }
+        .onKeyPress(.leftArrow) { viewModel.collapse(selection); return .handled }
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Text(selection.isEmpty ? "Select a folder" : "\(selection.count) selected")
@@ -96,9 +101,11 @@ private struct NameCell: View {
                 Button(action: toggle) {
                     Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption)
-                        .frame(width: 12)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(row.isExpanded ? "Collapse" : "Expand")
             } else {
                 Spacer().frame(width: 12)
             }

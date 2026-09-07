@@ -142,6 +142,29 @@ final class ReportViewModelTests: XCTestCase {
         XCTAssertEqual(r.deltaMonthSort, Int64.min)
     }
 
+    func testExpandAndCollapseByID() {
+        let vm = ReportViewModel()
+        vm.load(reports: [Fx.deepReport()], now: Fx.now)
+        vm.expand("/w/a")
+        vm.expand("/w/a/b")
+        XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b/c"))
+
+        vm.collapse("/w/a")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/x"])
+        XCTAssertTrue(vm.isExpanded("/w/a/b"), "nested expansion state is remembered")
+
+        vm.expand(["/w/a"])
+        XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b/c"), "deeper rows restored")
+
+        vm.collapse(["/w/a", "/w/a/b"])
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/x"])
+        XCTAssertFalse(vm.isExpanded("/w/a/b"))
+
+        let before = vm.visibleRows
+        vm.expand("/w/x")
+        XCTAssertEqual(vm.visibleRows, before, "expanding a childless node is harmless")
+    }
+
     func testLoadResetsExpansionState() {
         let vm = ReportViewModel()
         vm.load(reports: [Fx.deepReport()], now: Fx.now)

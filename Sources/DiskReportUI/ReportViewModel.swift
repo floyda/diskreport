@@ -87,6 +87,42 @@ public final class ReportViewModel: ObservableObject {
         rebuild()
     }
 
+    /// Expands a single node, revealing its children if any. No-op (no rebuild) if already expanded.
+    public func expand(_ id: String) {
+        guard !expanded.contains(id) else { return }
+        expanded.insert(id)
+        rebuild()
+    }
+
+    /// Collapses a single node. No-op (no rebuild) if already collapsed.
+    public func collapse(_ id: String) {
+        guard expanded.contains(id) else { return }
+        expanded.remove(id)
+        rebuild()
+    }
+
+    /// Expands every id in `ids`, rebuilding once.
+    public func expand(_ ids: some Collection<String>) {
+        guard !ids.isEmpty else { return }
+        var changed = false
+        for id in ids where !expanded.contains(id) {
+            expanded.insert(id)
+            changed = true
+        }
+        if changed { rebuild() }
+    }
+
+    /// Collapses every id in `ids`, rebuilding once.
+    public func collapse(_ ids: some Collection<String>) {
+        guard !ids.isEmpty else { return }
+        var changed = false
+        for id in ids where expanded.contains(id) {
+            expanded.remove(id)
+            changed = true
+        }
+        if changed { rebuild() }
+    }
+
     public func isExpanded(_ id: String) -> Bool { expanded.contains(id) }
 
     public func setSort(key: SortKey, ascending: Bool) {
