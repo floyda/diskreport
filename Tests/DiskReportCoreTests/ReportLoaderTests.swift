@@ -56,4 +56,36 @@ final class ReportLoaderTests: XCTestCase {
     func testNoRootsGivesEmptyList() throws {
         XCTAssertTrue(try ReportLoader.loadRootReports(store: store).isEmpty)
     }
+
+    func testFilterByRootPathsReturnsOnlyMatchingRoots() throws {
+        let root1ID = try store.rootID(for: "/r1")
+        let root2ID = try store.rootID(for: "/r2")
+        let stats = [DirStat(path: "/r", parentPath: nil, depth: 0, bytes: 100, fileCount: 1, newestMtime: 1)]
+        _ = try complete(rootID: root1ID, finishedAt: t0, stats: stats, totalBytes: 100)
+        _ = try complete(rootID: root2ID, finishedAt: t0, stats: stats, totalBytes: 100)
+
+        let filtered = try ReportLoader.loadRootReports(store: store, onlyRootPaths: Set(["/r1"]))
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(filtered[0].rootPath, "/r1")
+    }
+
+    func testFilterNilReturnsAllRoots() throws {
+        let root1ID = try store.rootID(for: "/r1")
+        let root2ID = try store.rootID(for: "/r2")
+        let stats = [DirStat(path: "/r", parentPath: nil, depth: 0, bytes: 100, fileCount: 1, newestMtime: 1)]
+        _ = try complete(rootID: root1ID, finishedAt: t0, stats: stats, totalBytes: 100)
+        _ = try complete(rootID: root2ID, finishedAt: t0, stats: stats, totalBytes: 100)
+
+        let all = try ReportLoader.loadRootReports(store: store)
+        XCTAssertEqual(all.count, 2)
+    }
+
+    func testFilterEmptySetReturnsNoRoots() throws {
+        let root1ID = try store.rootID(for: "/r1")
+        let stats = [DirStat(path: "/r", parentPath: nil, depth: 0, bytes: 100, fileCount: 1, newestMtime: 1)]
+        _ = try complete(rootID: root1ID, finishedAt: t0, stats: stats, totalBytes: 100)
+
+        let filtered = try ReportLoader.loadRootReports(store: store, onlyRootPaths: Set([]))
+        XCTAssertEqual(filtered.count, 0)
+    }
 }

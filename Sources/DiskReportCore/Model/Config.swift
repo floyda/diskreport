@@ -65,14 +65,20 @@ public struct Config: Codable, Equatable, Sendable {
         return try parse(data)
     }
 
-    /// Expands `~`, strips trailing slashes, validates each root is a directory, rejects nested roots.
-    public func resolvedRoots(isDirectory: (String) -> Bool = Config.defaultIsDirectory) throws -> [String] {
-        guard !roots.isEmpty else { throw ConfigError.noRoots }
-        let expanded = roots.map { raw -> String in
+    /// Normalizes root paths: expands `~` and strips trailing slashes, without validating.
+    /// Used to normalize paths for comparison with database-stored roots.
+    public static func normalizeRootPaths(_ paths: [String]) -> [String] {
+        return paths.map { raw -> String in
             var p = (raw as NSString).expandingTildeInPath
             while p.count > 1 && p.hasSuffix("/") { p.removeLast() }
             return p
         }
+    }
+
+    /// Expands `~`, strips trailing slashes, validates each root is a directory, rejects nested roots.
+    public func resolvedRoots(isDirectory: (String) -> Bool = Config.defaultIsDirectory) throws -> [String] {
+        guard !roots.isEmpty else { throw ConfigError.noRoots }
+        let expanded = Config.normalizeRootPaths(roots)
         for p in expanded where !isDirectory(p) {
             throw ConfigError.rootNotDirectory(p)
         }

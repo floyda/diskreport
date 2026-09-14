@@ -100,4 +100,15 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: p.dataDir.path, isDirectory: &isDir) && isDir.boolValue)
         XCTAssertTrue(FileManager.default.fileExists(atPath: p.logDir.path, isDirectory: &isDir) && isDir.boolValue)
     }
+
+    func testNormalizeRootPathsExpandsTildeAndStripsTrailingSlash() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let normalized = Config.normalizeRootPaths(["~/Some/Dir/", "/absolute/path/", "~"])
+        XCTAssertEqual(normalized, ["\(home)/Some/Dir", "/absolute/path", home])
+    }
+
+    func testNormalizeRootPathsPreservesAbsolutePaths() throws {
+        let normalized = Config.normalizeRootPaths(["/a", "/b/c"])
+        XCTAssertEqual(normalized, ["/a", "/b/c"])
+    }
 }

@@ -20,8 +20,16 @@ public struct RootReport: Sendable {
 }
 
 public enum ReportLoader {
-    public static func loadRootReports(store: Store) throws -> [RootReport] {
-        try store.roots().map { root in
+    public static func loadRootReports(store: Store, onlyRootPaths: Set<String>? = nil) throws -> [RootReport] {
+        let allRoots = try store.roots()
+        let rootsToLoad: [RootEntry]
+        if let filter = onlyRootPaths {
+            rootsToLoad = allRoots.filter { filter.contains($0.path) }
+        } else {
+            rootsToLoad = allRoots
+        }
+
+        return try rootsToLoad.map { root in
             let latest = try store.latestScan(rootID: root.id)
             guard let current = try store.latestCompletedScan(rootID: root.id), let finished = current.finishedAt else {
                 return RootReport(rootID: root.id, rootPath: root.path, current: nil, latest: latest, baselines: [:], rows: [])

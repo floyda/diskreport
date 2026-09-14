@@ -57,6 +57,7 @@ final class AppModel: ObservableObject {
         loadInFlight = true
 
         let dbURL = paths.databaseURL
+        let configURL = paths.configURL
         isLoading = true
         loadGeneration += 1
         let generation = loadGeneration
@@ -67,7 +68,21 @@ final class AppModel: ObservableObject {
                 guard FileManager.default.fileExists(atPath: dbURL.path) else { return ([], []) }
                 do {
                     let store = try Store(url: dbURL)
-                    let reports = try ReportLoader.loadRootReports(store: store)
+
+                    // Load config to filter roots to only those currently configured.
+                    // If config is missing or unreadable, fall back to showing all roots.
+                    var rootFilter: Set<String>? = nil
+                    do {
+                        // Normalize without validating: a configured root on an unmounted volume must
+                        // still count as configured, or the fallback would resurface removed roots.
+                        let config = try Config.load(from: configURL)
+                        rootFilter = Set(Config.normalizeRootPaths(config.roots))
+                    } catch {
+                        // If config is missing/unreadable, show all roots (existing behavior)
+                        NSLog("DiskReport: could not load config for filtering: \(error)")
+                    }
+
+                    let reports = try ReportLoader.loadRootReports(store: store, onlyRootPaths: rootFilter)
                     return (reports, TreeBuilder.build(reports))
                 } catch {
                     NSLog("DiskReport: load failed: \(error)")
