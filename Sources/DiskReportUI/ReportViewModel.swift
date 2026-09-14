@@ -56,14 +56,38 @@ public final class ReportViewModel: ObservableObject {
     public static let deepVisibleDepth = 3
 
     @Published public private(set) var visibleRows: [VisibleRow] = []
-    @Published public var filter: QuickFilter = .all { didSet { rebuild() } }
-    @Published public var searchText: String = "" { didSet { rebuild() } }
+    @Published public var filter: QuickFilter = .all {
+        didSet {
+            if isFiltering { recomputeFilteredExpanded() }
+            rebuild()
+        }
+    }
+    @Published public var searchText: String = "" {
+        didSet {
+            if isFiltering { recomputeFilteredExpanded() }
+            rebuild()
+        }
+    }
     @Published public private(set) var sortKey: SortKey = .name
     @Published public private(set) var sortAscending: Bool = true
 
     public private(set) var roots: [DirNode] = []
     public private(set) var now: Int64 = 0
+
+    /// Expansion state for the unfiltered ("All", no search) view.
     private var expanded: Set<String> = []
+    /// Expansion state for the current filtered/search view. Kept separate from `expanded` so
+    /// switching a quick filter or search off restores the user's unfiltered expansion unchanged.
+    /// Reset (and re-populated with every ancestor of a match) whenever the filter or search text
+    /// changes; the user's own toggles from then on are layered on top of that until it changes again.
+    private var filteredExpanded: Set<String> = []
+
+    /// The expansion set that `rebuild()`, `isExpanded`, and every mutator currently read/write:
+    /// `filteredExpanded` while a quick filter or search is active, `expanded` otherwise.
+    private var activeExpanded: Set<String> {
+        get { isFiltering ? filteredExpanded : expanded }
+        set { if isFiltering { filteredExpanded = newValue } else { expanded = newValue } }
+    }
 
     public init() {}
 
@@ -77,53 +101,59 @@ public final class ReportViewModel: ObservableObject {
     public func load(roots: [DirNode], now: Int64) {
         self.roots = roots
         self.now = now
-        expanded = []
-        for root in roots { expand(root, toDepth: Self.defaultVisibleDepth) }
+        var freshExpanded: Set<String> = []
+        for root in roots { expand(root, toDepth: Self.defaultVisibleDepth, into: &freshExpanded) }
+        expanded = freshExpanded
+        // A filter/search can already be active when the app reloads (the database changed
+        // underneath it); recompute the filtered view's auto-expansion against the new tree too.
+        if isFiltering { recomputeFilteredExpanded() } else { filteredExpanded = [] }
         rebuild()
     }
 
     public func toggle(_ id: String) {
-        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+        if activeExpanded.contains(id) { activeExpanded.remove(id) } else { activeExpanded.insert(id) }
         rebuild()
     }
 
     /// Expands a single node, revealing its children if any. No-op (no rebuild) if already expanded.
     public func expand(_ id: String) {
-        guard !expanded.contains(id) else { return }
-        expanded.insert(id)
+        guard !activeExpanded.contains(id) else { return }
+        activeExpanded.insert(id)
         rebuild()
     }
 
     /// Collapses a single node. No-op (no rebuild) if already collapsed.
     public func collapse(_ id: String) {
-        guard expanded.contains(id) else { return }
-        expanded.remove(id)
+        guard activeExpanded.contains(id) else { return }
+        activeExpanded.remove(id)
         rebuild()
     }
 
     /// Expands every id in `ids`, rebuilding once.
     public func expand(_ ids: some Collection<String>) {
         guard !ids.isEmpty else { return }
+        var set = activeExpanded
         var changed = false
-        for id in ids where !expanded.contains(id) {
-            expanded.insert(id)
+        for id in ids where !set.contains(id) {
+            set.insert(id)
             changed = true
         }
-        if changed { rebuild() }
+        if changed { activeExpanded = set; rebuild() }
     }
 
     /// Collapses every id in `ids`, rebuilding once.
     public func collapse(_ ids: some Collection<String>) {
         guard !ids.isEmpty else { return }
+        var set = activeExpanded
         var changed = false
-        for id in ids where expanded.contains(id) {
-            expanded.remove(id)
+        for id in ids where set.contains(id) {
+            set.remove(id)
             changed = true
         }
-        if changed { rebuild() }
+        if changed { activeExpanded = set; rebuild() }
     }
 
-    public func isExpanded(_ id: String) -> Bool { expanded.contains(id) }
+    public func isExpanded(_ id: String) -> Bool { activeExpanded.contains(id) }
 
     public func setSort(key: SortKey, ascending: Bool) {
         sortKey = key
@@ -132,29 +162,48 @@ public final class ReportViewModel: ObservableObject {
     }
 
     /// Collapses the tree back to the default: only each root is expanded, so their top-level
-    /// children stay listed.
+    /// children stay listed. Acts on whichever view (filtered/search or not) is currently active.
     public func collapseAll() {
-        expanded = []
-        for root in roots { expand(root, toDepth: Self.defaultVisibleDepth) }
+        var set: Set<String> = []
+        for root in roots { expand(root, toDepth: Self.defaultVisibleDepth, into: &set) }
+        activeExpanded = set
         rebuild()
     }
 
     /// Expands every node shallower than `depth` that has children, leaving already-expanded
-    /// deeper nodes alone.
+    /// deeper nodes alone. Acts on whichever view (filtered/search or not) is currently active.
     public func expandAll(toDepth depth: Int = ReportViewModel.deepVisibleDepth) {
-        for root in roots { expand(root, toDepth: depth) }
+        var set = activeExpanded
+        for root in roots { expand(root, toDepth: depth, into: &set) }
+        activeExpanded = set
         rebuild()
     }
 
     // MARK: - Internals
 
-    private func expand(_ node: DirNode, toDepth depth: Int) {
+    private func expand(_ node: DirNode, toDepth depth: Int, into set: inout Set<String>) {
         guard node.row.depth < depth, !node.children.isEmpty else { return }
-        expanded.insert(node.id)
-        for c in node.children { expand(c, toDepth: depth) }
+        set.insert(node.id)
+        for c in node.children { expand(c, toDepth: depth, into: &set) }
     }
 
     private var isFiltering: Bool { filter != .all || !searchText.isEmpty }
+
+    /// Rebuilds `filteredExpanded` from scratch so every ancestor of a match starts expanded: a
+    /// node is auto-opened when at least one of its children (matching or not, since only shown
+    /// children matter) has a match. Called whenever filtering turns on or the filter/search text
+    /// changes, so each new filter always starts fully revealed.
+    private func recomputeFilteredExpanded() {
+        var cache: [String: Bool] = [:]
+        var result: Set<String> = []
+        func visit(_ node: DirNode) {
+            guard hasMatch(node, cache: &cache) else { return }
+            if node.children.contains(where: { hasMatch($0, cache: &cache) }) { result.insert(node.id) }
+            for c in node.children { visit(c) }
+        }
+        for root in roots { visit(root) }
+        filteredExpanded = result
+    }
 
     private func matches(_ node: DirNode) -> Bool {
         guard filter.matches(node.row, now: now) else { return false }
@@ -200,12 +249,12 @@ public final class ReportViewModel: ObservableObject {
         var cache: [String: Bool] = [:]
         let less = comparator()
         let filtering = isFiltering
+        let openIDs = activeExpanded
 
         func visit(_ node: DirNode) {
             if filtering && !hasMatch(node, cache: &cache) { return }
             let shownChildren = node.children.filter { !filtering || hasMatch($0, cache: &cache) }
-            let childHasMatch = filtering && shownChildren.contains { hasMatch($0, cache: &cache) }
-            let open = !shownChildren.isEmpty && (expanded.contains(node.id) || childHasMatch)
+            let open = !shownChildren.isEmpty && openIDs.contains(node.id)
             out.append(VisibleRow(node: node, isExpanded: open))
             guard open else { return }
             for c in shownChildren.sorted(by: less) { visit(c) }

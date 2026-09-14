@@ -172,4 +172,104 @@ final class ReportViewModelTests: XCTestCase {
         vm.load(reports: [Fx.deepReport()], now: Fx.now)
         XCTAssertEqual(vm.visibleRows.count, 3)
     }
+
+    /// Regression coverage for collapse/expand being ignored while a filter or search is active:
+    /// once matches are auto-revealed, the user's own toggles must still be respected.
+    func testCollapseWhileFilteringHidesDescendantsOfAutoExpandedAncestor() {
+        let vm = ReportViewModel()
+        let rows = [
+            Fx.row("/w", day: .changed(10)), Fx.row("/w/a", day: .changed(0)), Fx.row("/w/a/b", day: .changed(0)),
+            Fx.row("/w/a/b/c", day: .changed(0)), Fx.row("/w/a/b/c/d", day: .changed(10)), Fx.row("/w/x", day: .changed(-3)),
+            Fx.row("/w/y", day: .new(2)),
+        ]
+        vm.load(reports: [Fx.report("/w", rows: rows)], now: Fx.now)
+        vm.filter = .grewToday
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/a/b/c/d", "/w/y"])
+
+        vm.collapse("/w/a")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/y"],
+                       "collapsing an auto-expanded ancestor while filtering hides its matching descendants")
+
+        vm.expand("/w/a")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/a/b/c/d", "/w/y"],
+                       "expanding it again re-reveals the matches")
+    }
+
+    func testToggleWhileFiltering() {
+        let vm = ReportViewModel()
+        let rows = [
+            Fx.row("/w", day: .changed(10)), Fx.row("/w/a", day: .changed(0)), Fx.row("/w/a/b", day: .changed(10)),
+        ]
+        vm.load(reports: [Fx.report("/w", rows: rows)], now: Fx.now)
+        vm.filter = .grewToday
+        XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b"))
+        vm.toggle("/w/a")
+        XCTAssertFalse(vm.visibleRows.map(\.id).contains("/w/a/b"), "toggle collapses while filtering")
+        vm.toggle("/w/a")
+        XCTAssertTrue(vm.visibleRows.map(\.id).contains("/w/a/b"), "toggle re-expands while filtering")
+    }
+
+    func testCollapseAllAndExpandAllWhileFiltering() {
+        let vm = ReportViewModel()
+        // Kept within expandAll's default depth cap (deepVisibleDepth = 3) so the round trip
+        // through collapseAll/expandAll is expected to restore the same view.
+        let rows = [
+            Fx.row("/w", day: .changed(10)), Fx.row("/w/a", day: .changed(0)), Fx.row("/w/a/b", day: .changed(0)),
+            Fx.row("/w/a/b/c", day: .changed(10)),
+        ]
+        vm.load(reports: [Fx.report("/w", rows: rows)], now: Fx.now)
+        vm.filter = .grewToday
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c"])
+
+        vm.collapseAll()
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a"],
+                       "collapseAll while filtering collapses to the default depth, same as unfiltered")
+
+        vm.expandAll()
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c"],
+                       "expandAll while filtering reveals matches again")
+    }
+
+    func testSearchTextCollapseAndExpand() {
+        let vm = ReportViewModel()
+        vm.load(reports: [Fx.deepReport()], now: Fx.now)
+        vm.searchText = "C/D"
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/a/b/c/d"])
+        vm.collapse("/w/a/b")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b"],
+                       "collapsing an auto-expanded ancestor hides matches while searching")
+        vm.expand("/w/a/b")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b", "/w/a/b/c", "/w/a/b/c/d"])
+    }
+
+    func testFilteredExpansionStateIsIndependentOfUnfilteredState() {
+        let vm = ReportViewModel()
+        let rows = [
+            Fx.row("/w", day: .changed(10)), Fx.row("/w/a", day: .changed(0)), Fx.row("/w/a/b", day: .changed(10)),
+        ]
+        vm.load(reports: [Fx.report("/w", rows: rows)], now: Fx.now)
+        // Unfiltered: default expansion shows /w and /w/a but not /w/a/b.
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a"])
+
+        vm.filter = .grewToday
+        vm.collapse("/w/a")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a"])
+
+        vm.filter = .all
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a"], "unfiltered expansion state is untouched by filtered collapse")
+        vm.toggle("/w/a")
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b"], "unfiltered expansion still works normally")
+    }
+
+    func testLoadWhileFilterActiveAutoExpandsMatches() {
+        let vm = ReportViewModel()
+        vm.filter = .grewToday
+        let rows = [
+            Fx.row("/w", day: .changed(10)), Fx.row("/w/a", day: .changed(0)), Fx.row("/w/a/b", day: .changed(10)),
+            Fx.row("/w/x", day: .changed(-3)),
+        ]
+        vm.load(reports: [Fx.report("/w", rows: rows)], now: Fx.now)
+        XCTAssertEqual(vm.visibleRows.map(\.id), ["/w", "/w/a", "/w/a/b"],
+                       "loading while a filter is active still auto-expands ancestors of matches")
+    }
 }
